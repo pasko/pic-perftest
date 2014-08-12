@@ -1,0 +1,575 @@
+#!/bin/bash
+
+set -x
+set -e
+
+if [[ ! -d "$ANDROID_TOOLS" ]]; then
+  echo "error: ANDROID_TOOLS needs to be set" 1>&2
+  exit 1
+fi
+
+ADB=$ANDROID_TOOLS/sdk/platform-tools/adb
+
+GCC_VERSION=4.9
+ANDROID_CC="$ANDROID_TOOLS/ndk/toolchains/arm-linux-androideabi-$GCC_VERSION/prebuilt/linux-x86_64/bin/arm-linux-androideabi-gcc"
+ANDROID_SYSROOT_FLAGS="--sysroot=$ANDROID_TOOLS/ndk/platforms/android-14/arch-arm"
+ANDROID_LIBGCC_A="$ANDROID_TOOLS/ndk/toolchains/arm-linux-androideabi-$GCC_VERSION/prebuilt/linux-x86_64/lib/gcc/arm-linux-androideabi/$GCC_VERSION/libgcc.a"
+
+CFLAGS="-Os -std=c99"
+LDFLAGS=""
+LDFLAGS_SO_BEGIN="-shared \
+   -Wl,-z,now \
+   -Wl,-z,relro \
+   -Wl,--fatal-warnings \
+   -Wl,-z,noexecstack \
+   -fPIC \
+   -Wl,--gc-sections \
+   -fuse-ld=gold \
+   -nostdlib \
+   -Wl,--no-undefined \
+   $ANDROID_SYSROOT_FLAGS \
+   -Wl,--icf=safe \
+   -L$ANDROID_TOOLS/ndk//sources/cxx-stl/stlport/libs/armeabi-v7a \
+   -Wl,-shared,-Bsymbolic \
+   $ANDROID_TOOLS/ndk//platforms/android-14/arch-arm/usr/lib/crtbegin_so.o \
+   -Wl,-O1 \
+   -Wl,--as-needed"
+LDFLAGS_SO_END=" \
+   -Wl,--warn-shared-textrel \
+   -Wl,--whole-archive \
+   -Wl,--no-whole-archive \
+   -landroid \
+   -ljnigraphics \
+   -llog \
+   -lGLESv2 \
+   -lstlport_static \
+   $ANDROID_LIBGCC_A \
+   -lc \
+   -ldl \
+   -lm \
+   $ANDROID_TOOLS/ndk//platforms/android-14/arch-arm/usr/lib/crtend_so.o"
+
+"$ANDROID_CC" $ANDROID_SYSROOT_FLAGS $CFLAGS -fPIC \
+  -c library.c -o library.o
+"$ANDROID_CC" $ANDROID_SYSROOT_FLAGS $CFLAGS -fPIC \
+  -c library_helper.c -o library_helper.o
+
+"$ANDROID_CC" $ANDROID_SYSROOT_FLAGS $LDFLAGS_SO_BEGIN \
+  library.o library_helper.o -shared -o library.so $LDFLAGS_SO_END
+
+"$ANDROID_CC" $ANDROID_SYSROOT_FLAGS $CFLAGS test_runner.c -g -o test_runner
+
+$ADB push library.so /data/local/tmp
+$ADB push test_runner /data/local/tmp
+$ADB shell /data/local/tmp/test_runner
+
+# The compile command we have in Chromium:
+#  /path/to/chrome/src/third_party/android_tools/ndk//toolchains/arm-linux-androideabi-4.8/prebuilt/linux-x86_64/bin/arm-linux-androideabi-g++
+#    -MMD
+#    -MF
+#    obj/net/disk_cache/simple/net.simple_entry_impl.o.d
+#    -DV8_DEPRECATION_WARNINGS
+#    -DBLINK_SCALE_FILTERS_AT_RECORD_TIME
+#    -D_FILE_OFFSET_BITS=64
+#    -DNO_TCMALLOC
+#    -DDISABLE_NACL
+#    -DGOOGLE_CHROME_BUILD
+#    -DUSE_LIBJPEG_TURBO=1
+#    -DENABLE_WEBRTC=1
+#    -DUSE_PROPRIETARY_CODECS
+#    -DENABLE_BROWSER_CDMS
+#    -DENABLE_CONFIGURATION_POLICY
+#    -DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY
+#    -DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE
+#    -DENABLE_EGLIMAGE=1
+#    -DENABLE_AUTOFILL_DIALOG=1
+#    -DENABLE_PROD_WALLET_SERVICE=1
+#    -DCLD_VERSION=1
+#    -DCLD_DATA_FROM_STATIC
+#    -DENABLE_PRINTING=1
+#    -DENABLE_MANAGED_USERS=1
+#    '-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"'
+#    '-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"'
+#    '-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"'
+#    '-DSPDY_PROXY_AUTH_VALUE="ac4500dd3b7579186c1b0620614fdb1f7d61f944"'
+#    '-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"'
+#    '-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"'
+#    '-DDATA_REDUCTION_PROXY_SSL_ORIGIN="http://ssl.googlezip.net:1043/"'
+#    '-DDATA_REDUCTION_PROXY_ALT_ORIGIN="https://proxy.googlezip.net:443/"'
+#    '-DDATA_REDUCTION_PROXY_ALT_FALLBACK_ORIGIN="http://compress.googlezip.net:80/"'
+#    -DVIDEO_HOLE=1
+#    -DNET_IMPLEMENTATION
+#    -DPOSIX_AVOID_MMAP
+#    -DENABLE_BUILT_IN_DNS
+#    -DU_USING_ICU_NAMESPACE=0
+#    -DU_ENABLE_DYLOAD=0
+#    -DU_STATIC_IMPLEMENTATION
+#    -DUSE_OPENSSL=1
+#    -DUSE_OPENSSL_CERTS=1
+#    -D__STDC_CONSTANT_MACROS
+#    -D__STDC_FORMAT_MACROS
+#    -DANDROID
+#    -D__GNU_SOURCE=1
+#    -DUSE_STLPORT=1
+#    -D_STLP_USE_PTR_SPECIALIZATIONS=1
+#    '-DCHROME_BUILD_ID=""'
+#    -DHAVE_SYS_UIO_H
+#    -DNDEBUG
+#    -DOFFICIAL_BUILD
+#    -DNVALGRIND
+#    -DDYNAMIC_ANNOTATIONS_ENABLED=0
+#    -D_FORTIFY_SOURCE=2
+#    -Igen
+#    -I../../third_party/openssl
+#    -I../..
+#    -I../../sdch/open-vcdiff/src
+#    -I../../third_party/icu/source/i18n
+#    -I../../third_party/icu/source/common
+#    -I../../third_party/zlib
+#    -Igen/net
+#    -I../../third_party/openssl/openssl/include
+#    -fstack-protector
+#    --param=ssp-buffer-size=4
+#    -Werror
+#    -fno-exceptions
+#    -fno-strict-aliasing
+#    -Wall
+#    -Wno-unused-parameter
+#    -Wno-missing-field-initializers
+#    -fvisibility=hidden
+#    -pipe
+#    -fPIC
+#    -g
+#    -Wno-unused-local-typedefs
+#    -march=armv7-a
+#    -mtune=generic-armv7-a
+#    -mfpu=vfpv3-d16
+#    -mfloat-abi=softfp
+#    -mthumb
+#    -fno-tree-sra
+#    -fno-partial-inlining
+#    -fno-early-inlining
+#    -fno-tree-copy-prop
+#    -fno-tree-loop-optimize
+#    -fno-move-loop-invariants
+#    -fno-caller-saves
+#    -Wno-psabi
+#    -mthumb-interwork
+#    -ffunction-sections
+#    -funwind-tables
+#    -g
+#    -fstack-protector
+#    -fno-short-enums
+#    -finline-limit=64
+#    -Wa,--noexecstack
+#    --sysroot=/path/to/chrome/src/third_party/android_tools/ndk//platforms/android-14/arch-arm
+#    -isystem/path/to/chrome/src/third_party/android_tools/ndk//sources/cxx-stl/stlport/stlport
+#    -Os
+#    -fno-ident
+#    -fdata-sections
+#    -ffunction-sections
+#    -fomit-frame-pointer
+#    -fno-unwind-tables
+#    -fno-asynchronous-unwind-tables
+#    -fno-rtti
+#    -fno-threadsafe-statics
+#    -fvisibility-inlines-hidden
+#    -Wsign-compare
+#    -Wno-abi
+#    -std=gnu++11
+#    -Wno-narrowing
+#    -Wno-literal-suffix
+#    -c
+#    ../../net/disk_cache/simple/simple_entry_impl.cc
+#    -o
+#    obj/net/disk_cache/simple/net.simple_entry_impl.o
+
+# Original link command:
+# /path/to/chrome/src/third_party/android_tools/ndk/toolchains/arm-linux-androideabi-4.8/prebuilt/linux-x86_64/bin/arm-linux-androideabi-g++
+#   -shared
+#   -Wl,-z,now
+#   -Wl,-z,relro
+#   -Wl,--fatal-warnings
+#   -Wl,-z,noexecstack
+#   -fPIC
+#   -Wl,--gc-sections
+#   -fuse-ld=gold
+#   -nostdlib
+#   -Wl,--no-undefined
+#   --sysroot=/path/to/chrome/src/third_party/android_tools/ndk//platforms/android-14/arch-arm
+#   -Wl,--icf=safe
+#   -L/path/to/chrome/src/third_party/android_tools/ndk//sources/cxx-stl/stlport/libs/armeabi-v7a
+#   -Wl,-shared,-Bsymbolic
+#   /path/to/chrome/src/third_party/android_tools/ndk//platforms/android-14/arch-arm/usr/lib/crtbegin_so.o
+#   -B./build/android/arm-linux-androideabi-gold.1.10/
+#   -Wl,-section-ordering-file=...
+#   -Wl,-O1
+#   -Wl,--as-needed
+#   -Wl,--warn-shared-textrel
+#   -o
+#   lib/libchrome.2102.0.so
+#   -Wl,-soname=libchrome.2102.0.so
+#   @lib/libchrome.2102.0.so.rsp
+
+# Contents of the lib/libchrome.2102.0.so.rsp:
+#  -Wl,--whole-archive
+#  obj/chrome/app/android/libchrome.chrome_jni_onload.o
+#  libchrome_android_private.a
+#  obj/chrome/libchrome_android_core.a
+#  obj/...
+#  obj/...
+#  obj/third_party/protobuf/libprotobuf_lite.a
+#  obj/components/libenhanced_bookmarks.a
+#  obj/base/libbase.a
+#  obj/base/libbase_static.a
+#  obj/base/allocator/liballocator_extension_thunks.a
+#  obj/third_party/modp_b64/libmodp_b64.a
+#  obj/base/third_party/dynamic_annotations/libdynamic_annotations.a
+#  obj/third_party/ashmem/libashmem.a
+#  obj/third_party/android_tools/ndk/libcpu_features.a
+#  obj/third_party/libevent/libevent.a
+#  obj/sql/libsql.a
+#  obj/third_party/sqlite/libsqlite3.a
+#  obj/third_party/icu/libicui18n.a
+#  obj/third_party/icu/libicuuc.a
+#  obj/third_party/icu/libicudata.a
+#  obj/ui/gfx/libgfx.a
+#  obj/base/libbase_i18n.a
+#  obj/skia/libskia_library.a
+#  obj/skia/libskia_opts.a
+#  obj/skia/libskia_opts_neon.a
+#  obj/third_party/zlib/libchrome_zlib.a
+#  obj/third_party/sfntly/libsfntly.a
+#  obj/third_party/expat/libexpat.a
+#  obj/third_party/freetype/libft2.a
+#  obj/third_party/libpng/libpng.a
+#  obj/skia/libskia_chrome.a
+#  obj/third_party/harfbuzz-ng/libharfbuzz-ng.a
+#  obj/ui/gfx/libgfx_geometry.a
+#  obj/third_party/libjpeg_turbo/libjpeg_turbo.a
+#  obj/url/liburl_lib.a
+#  obj/components/libenhanced_bookmarks_proto.a
+#  obj/components/libvariations.a
+#  obj/third_party/mt19937ar/libmt19937ar.a
+#  obj/components/libgoogle_core_browser.a
+#  obj/net/libnet.a
+#  obj/base/libbase_prefs.a
+#  obj/crypto/libcrcrypto.a
+#  obj/third_party/openssl/libopenssl.a
+#  obj/sdch/libsdch.a
+#  obj/ui/base/libui_base.a
+#  obj/ui/events/libevents.a
+#  obj/ui/events/libevents_base.a
+#  obj/ui/events/libdom4_keycode_converter.a
+#  obj/ui/events/libgesture_detection.a
+#  obj/ui/events/platform/libevents_platform.a
+#  obj/components/libkeyed_service_core.a
+#  obj/components/libinfobars_core.a
+#  obj/components/liburl_fixer.a
+#  obj/printing/libprinting.a
+#  obj/sync/libsync_api.a
+#  obj/sync/libsync_internal_api.a
+#  obj/sync/libsync_core.a
+#  obj/sync/libsync_proto.a
+#  obj/google_apis/libgoogle_apis.a
+#  obj/third_party/libxml/libxml2.a
+#  obj/third_party/cacheinvalidation/libcacheinvalidation.a
+#  obj/third_party/cacheinvalidation/libcacheinvalidation_proto_cpp.a
+#  obj/third_party/leveldatabase/libleveldatabase.a
+#  obj/third_party/re2/libre2.a
+#  obj/third_party/snappy/libsnappy.a
+#  obj/ui/accessibility/libaccessibility.a
+#  obj/ui/accessibility/libax_gen.a
+#  obj/tools/json_schema_compiler/libapi_gen_util.a
+#  obj/chrome/libbrowser.a
+#  obj/chrome/libbrowser_ui.a
+#  obj/chrome/libcert_logger_proto.a
+#  obj/chrome/libcommon.a
+#  obj/chrome/libcommon_net.a
+#  obj/gpu/libgpu_ipc.a
+#  obj/gpu/libcommand_buffer_common.a
+#  obj/gpu/command_buffer/libgles2_utils.a
+#  obj/ipc/libipc.a
+#  obj/chrome/libinstaller_util.a
+#  obj/chrome/libsafe_browsing_proto.a
+#  obj/chrome/libcommon_constants.a
+#  obj/components/libbookmarks_common.a
+#  obj/components/libcloud_devices_common.a
+#  obj/components/libcomponent_updater.a
+#  obj/components/libjson_schema.a
+#  obj/components/libmetrics.a
+#  obj/components/libcomponent_metrics_proto.a
+#  obj/components/libpolicy_component_common.a
+#  obj/components/libcloud_policy_proto.a
+#  obj/components/libpolicy.a
+#  obj/components/libcloud_policy_proto_generated_compile.a
+#  obj/components/libtranslate_core_common.a
+#  obj/content/libcontent_common.a
+#  obj/components/libtracing.a
+#  obj/third_party/libjingle/libjingle.a
+#  obj/third_party/libjingle/libjingle_p2p_constants.a
+#  obj/ui/events/ipc/libevents_ipc.a
+#  obj/ui/gfx/ipc/libgfx_ipc.a
+#  obj/ui/shell_dialogs/libshell_dialogs.a
+#  obj/cc/libcc.a
+#  obj/gpu/libcommand_buffer_client.a
+#  obj/gpu/libcommand_buffer_service.a
+#  obj/gpu/libdisk_cache_proto.a
+#  obj/third_party/smhasher/libcityhash.a
+#  obj/ui/gl/libgl_wrapper.a
+#  obj/third_party/angle/src/libtranslator.a
+#  obj/third_party/angle/src/libtranslator_lib.a
+#  obj/third_party/angle/src/libpreprocessor.a
+#  obj/gpu/libgles2_cmd_helper.a
+#  obj/gpu/libgpu_config.a
+#  obj/media/libmedia.a
+#  obj/third_party/opus/libopus.a
+#  obj/media/libshared_memory_support.a
+#  obj/media/libplayer_android.a
+#  libyuv.a
+#  libyuv_neon.a
+#  obj/gpu/libgles2_c_lib.a
+#  obj/gpu/libgles2_implementation.a
+#  obj/gpu/libgl_in_process_context.a
+#  obj/gpu/skia_bindings/libgpu_skia_bindings.a
+#  obj/mojo/libmojo_cpp_bindings.a
+#  obj/mojo/libmojo_environment_chromium.a
+#  obj/mojo/libmojo_environment_chromium_impl.a
+#  obj/mojo/libmojo_common_lib.a
+#  obj/mojo/libmojo_service_provider_bindings.a
+#  obj/mojo/libmojo_system_impl.a
+#  obj/third_party/WebKit/Source/platform/libblink_platform.a
+#  obj/third_party/WebKit/Source/wtf/libwtf.a
+#  obj/third_party/WebKit/Source/platform/libblink_common.a
+#  obj/third_party/WebKit/Source/platform/libblink_heap_asm_stubs.a
+#  obj/third_party/libwebp/libwebp_dec.a
+#  obj/third_party/libwebp/libwebp_dsp.a
+#  obj/third_party/libwebp/libwebp_dsp_neon.a
+#  obj/third_party/libwebp/libwebp_utils.a
+#  obj/third_party/libwebp/libwebp_demux.a
+#  obj/third_party/libwebp/libwebp_enc.a
+#  obj/third_party/ots/libots.a
+#  obj/third_party/brotli/libbrotli.a
+#  obj/third_party/qcms/libqcms.a
+#  obj/v8/tools/gyp/libv8_base.a
+#  obj/v8/tools/gyp/libv8_libbase.a
+#  obj/v8/tools/gyp/libv8_snapshot.a
+#  obj/third_party/iccjpeg/libiccjpeg.a
+#  obj/third_party/openmax_dl/dl/libopenmax_dl.a
+#  obj/third_party/openmax_dl/dl/libopenmax_dl_armv7.a
+#  obj/third_party/WebKit/Source/platform/libblink_arm_neon.a
+#  obj/third_party/WebKit/Source/web/libblink_web.a
+#  obj/third_party/WebKit/Source/core/libwebcore_dom.a
+#  obj/third_party/libxslt/libxslt.a
+#  obj/third_party/WebKit/Source/core/libwebcore_html.a
+#  obj/third_party/WebKit/Source/core/libwebcore_remaining.a
+#  obj/third_party/WebKit/Source/core/libwebcore_rendering.a
+#  obj/third_party/WebKit/Source/core/libwebcore_svg.a
+#  obj/third_party/WebKit/Source/core/libwebcore_generated.a
+#  obj/gin/libgin.a
+#  obj/third_party/WebKit/Source/modules/libmodules.a
+#  obj/webkit/common/gpu/libwebkit_gpu.a
+#  obj/webkit/common/libwebkit_common.a
+#  obj/webkit/libwebkit_storage_browser.a
+#  obj/webkit/libwebkit_storage_common.a
+#  obj/media/cast/libcast_net.a
+#  obj/media/cast/libcast_base.a
+#  obj/media/cast/libcast_logging_proto.a
+#  obj/third_party/zlib/google/libzip.a
+#  obj/third_party/zlib/libminizip.a
+#  obj/chrome/common/extensions/api/libchrome_api.a
+#  obj/content/libcontent_browser.a
+#  obj/ui/snapshot/libsnapshot.a
+#  obj/content/browser/service_worker/libdatabase_proto.a
+#  obj/content/browser/speech/proto/libspeech_proto.a
+#  obj/content/libcontent_child.a
+#  obj/webkit/child/libwebkit_child.a
+#  obj/ui/native_theme/libnative_theme.a
+#  obj/content/libcontent_gpu.a
+#  obj/content/libcontent_utility.a
+#  obj/courgette/libcourgette_lib.a
+#  obj/third_party/lzma_sdk/liblzma_sdk.a
+#  obj/content/libcontent_common_mojo_bindings.a
+#  obj/cc/libcc_surfaces.a
+#  obj/mojo/libmojo_js_bindings.a
+#  obj/net/libhttp_server.a
+#  obj/ui/surface/libsurface.a
+#  obj/sandbox/libsandbox_services.a
+#  obj/sandbox/libseccomp_bpf.a
+#  obj/sandbox/libseccomp_bpf_helpers.a
+#  obj/jingle/libjingle_glue.a
+#  obj/components/libautofill_core_common.a
+#  obj/components/libautofill_content_common.a
+#  obj/components/libpassword_manager_core_common.a
+#  obj/components/libsignin_core_common.a
+#  obj/components/libtranslate_content_common.a
+#  obj/components/libtranslate_core_language_detection.a
+#  obj/third_party/cld/libcld.a
+#  obj/components/libvisitedlink_common.a
+#  obj/extensions/common/api/libextensions_api.a
+#  obj/device/serial/libdevice_serial.a
+#  obj/extensions/libextensions_common.a
+#  obj/components/liburl_matcher.a
+#  obj/chrome/libin_memory_url_index_cache_proto.a
+#  obj/components/libauto_login_parser.a
+#  obj/components/libdom_distiller_core.a
+#  obj/third_party/dom_distiller_js/libdom_distiller_js_proto.a
+#  obj/components/libleveldb_proto.a
+#  obj/components/libdistilled_page_proto.a
+#  obj/components/libdom_distiller_webui.a
+#  obj/components/libinvalidation.a
+#  obj/jingle/libnotifier.a
+#  obj/components/libgcm_driver.a
+#  obj/components/libos_crypt.a
+#  obj/components/libpref_registry.a
+#  obj/components/libsignin_core_browser.a
+#  obj/components/libwebdata_common.a
+#  obj/components/libomaha_query_params.a
+#  obj/components/libonc_component.a
+#  obj/components/libpassword_manager_core_browser.a
+#  obj/ui/message_center/libmessage_center.a
+#  obj/chrome/libbrowser_extensions.a
+#  obj/chrome/libcast_channel_proto.a
+#  obj/chrome/libdebugger.a
+#  obj/chrome/libsync_file_system_proto.a
+#  obj/device/hid/libdevice_hid.a
+#  obj/extensions/libextensions_browser.a
+#  obj/components/libkeyed_service_content.a
+#  obj/components/libuser_prefs.a
+#  obj/third_party/webrtc/modules/libdesktop_capture.a
+#  obj/third_party/webrtc/system_wrappers/source/libsystem_wrappers.a
+#  obj/third_party/webrtc/base/libwebrtc_base.a
+#  obj/third_party/webrtc/system_wrappers/source/libcpu_features_android.a
+#  obj/chrome/browser/performance_monitor/libperformance_monitor.a
+#  obj/components/libautofill_content_risk_proto.a
+#  obj/device/bluetooth/libdevice_bluetooth.a
+#  obj/device/nfc/libdevice_nfc.a
+#  obj/net/libnet_with_v8.a
+#  obj/ui/compositor/libcompositor.a
+#  obj/ui/web_dialogs/libweb_dialogs.a
+#  obj/chrome/libsafe_browsing_chunk_proto.a
+#  obj/chrome/libsafe_browsing_report_proto.a
+#  obj/components/libweb_contents_delegate_android.a
+#  obj/chrome/libprobe_message_proto.a
+#  obj/chrome/libsuggestions_proto.a
+#  obj/components/libautocomplete.a
+#  obj/components/libautofill_core_browser.a
+#  obj/third_party/fips181/libfips181.a
+#  obj/third_party/libaddressinput/libaddressinput_util.a
+#  obj/third_party/libphonenumber/libphonenumber.a
+#  obj/third_party/libphonenumber/libphonenumber_without_metadata.a
+#  obj/components/libbookmarks_browser.a
+#  obj/components/libfavicon_base.a
+#  obj/components/libquery_parser.a
+#  obj/components/libstartup_metric_utils.a
+#  obj/components/libcaptive_portal.a
+#  obj/components/libdata_reduction_proxy_browser.a
+#  obj/components/libdata_reduction_proxy_common.a
+#  obj/components/libdomain_reliability.a
+#  obj/components/libfavicon_core.a
+#  obj/components/libhistory_core_browser.a
+#  obj/components/libhistory_core_common.a
+#  obj/components/libmetrics_net.a
+#  obj/components/libnavigation_metrics.a
+#  obj/components/libnetwork_time.a
+#  obj/components/libpolicy_component_browser.a
+#  obj/components/libprecache_core.a
+#  obj/components/libprecache_core_proto.a
+#  obj/components/librappor.a
+#  obj/components/libsearch_engines.a
+#  obj/components/search_engines/libprepopulated_engines.a
+#  obj/components/libsearch_provider_logos.a
+#  obj/components/libsync_driver.a
+#  obj/components/libtranslate_core_browser.a
+#  obj/components/liblanguage_usage_metrics.a
+#  obj/chrome/libapps.a
+#  obj/components/libautofill_content_browser.a
+#  obj/components/libdom_distiller_content.a
+#  obj/components/libnavigation_interception.a
+#  obj/components/libpassword_manager_content_browser.a
+#  obj/components/libprecache_content.a
+#  obj/components/libsessions.a
+#  obj/components/libtranslate_content_browser.a
+#  obj/components/libvisitedlink_browser.a
+#  obj/testing/perf/libperf_test.a
+#  obj/components/libbreakpad_component.a
+#  obj/components/libbreakpad_component_lib.a
+#  obj/breakpad/libbreakpad_client.a
+#  obj/components/libbreakpad_host.a
+#  obj/components/libcdm_browser.a
+#  obj/components/libcdm_common.a
+#  obj/chrome/libplugin.a
+#  obj/chrome/librenderer.a
+#  obj/components/libautofill_content_renderer.a
+#  obj/content/libcontent_renderer.a
+#  obj/mojo/libmojo_js_bindings_lib.a
+#  obj/third_party/libjingle/libjingle_webrtc.a
+#  obj/third_party/libjingle/libjingle_webrtc_common.a
+#  obj/third_party/libsrtp/libsrtp.a
+#  obj/third_party/webrtc/modules/libmedia_file.a
+#  obj/third_party/webrtc/modules/libvideo_capture_module.a
+#  obj/third_party/webrtc/modules/libwebrtc_utility.a
+#  obj/third_party/webrtc/modules/libaudio_coding_module.a
+#  obj/third_party/webrtc/modules/libCNG.a
+#  obj/third_party/webrtc/common_audio/libcommon_audio.a
+#  obj/third_party/webrtc/common_audio/libcommon_audio_neon.a
+#  obj/third_party/webrtc/modules/libG711.a
+#  obj/third_party/webrtc/modules/libG722.a
+#  obj/third_party/webrtc/modules/libiLBC.a
+#  obj/third_party/webrtc/modules/libiSAC.a
+#  obj/third_party/webrtc/modules/libiSACFix.a
+#  obj/third_party/webrtc/modules/libisac_neon.a
+#  obj/third_party/webrtc/modules/libPCM16B.a
+#  obj/third_party/webrtc/modules/libwebrtc_opus.a
+#  obj/third_party/webrtc/modules/libneteq.a
+#  obj/third_party/webrtc/modules/libwebrtc_video_coding.a
+#  obj/third_party/webrtc/modules/libwebrtc_i420.a
+#  obj/third_party/webrtc/common_video/libcommon_video.a
+#  obj/third_party/webrtc/modules/video_coding/utility/libvideo_coding_utility.a
+#  obj/third_party/webrtc/modules/video_coding/codecs/vp8/libwebrtc_vp8.a
+#  obj/third_party/libvpx/libvpx.a
+#  obj/third_party/libvpx/libvpx_asm_offsets_vp8.a
+#  obj/third_party/libvpx/libvpx_asm_offsets_vpx_scale.a
+#  obj/third_party/libvpx/libvpx_intrinsics_neon.a
+#  obj/third_party/webrtc/modules/libvideo_render_module.a
+#  obj/third_party/usrsctp/libusrsctplib.a
+#  libpeerconnection.a
+#  obj/third_party/webrtc/voice_engine/libvoice_engine.a
+#  obj/third_party/webrtc/modules/libaudio_conference_mixer.a
+#  obj/third_party/webrtc/modules/libaudio_processing.a
+#  obj/third_party/webrtc/modules/libaudioproc_debug_proto.a
+#  obj/third_party/webrtc/modules/libaudio_processing_neon.a
+#  obj/third_party/webrtc/modules/audio_processing/lib_core_neon_offsets.a
+#  obj/third_party/webrtc/modules/libaudio_device.a
+#  obj/third_party/webrtc/modules/libbitrate_controller.a
+#  obj/third_party/webrtc/modules/librtp_rtcp.a
+#  obj/third_party/webrtc/modules/libpaced_sender.a
+#  obj/third_party/webrtc/modules/libremote_bitrate_estimator.a
+#  obj/third_party/webrtc/modules/remote_bitrate_estimator/librbe_components.a
+#  obj/third_party/webrtc/libwebrtc.a
+#  obj/third_party/webrtc/libwebrtc_common.a
+#  obj/third_party/webrtc/video_engine/libvideo_engine_core.a
+#  obj/third_party/webrtc/modules/libvideo_processing.a
+#  obj/components/libcdm_renderer.a
+#  obj/components/libplugins_renderer.a
+#  obj/components/libtranslate_content_renderer.a
+#  obj/components/libvisitedlink_renderer.a
+#  obj/extensions/libextensions_renderer.a
+#  obj/media/cast/libcast_sender.a
+#  obj/third_party/smhasher/libmurmurhash3.a
+#  obj/chrome/libutility.a
+#  obj/content/libcontent_worker.a
+#  obj/content/libcontent_app_browser.a
+#  obj/mojo/libmojo_service_manager.a
+#  -Wl,--no-whole-archive
+#  -landroid
+#  -ljnigraphics
+#  -llog
+#  -lGLESv2
+#  -lstlport_static
+#  /path/to/chrome/src/third_party/android_tools/ndk/toolchains/arm-linux-androideabi-4.8/prebuilt/linux-x86_64/bin/../lib/gcc/arm-linux-androideabi/4.8/libgcc.a
+#  -lc
+#  -ldl
+#  -lm
+#  /path/to/chrome/src/third_party/android_tools/ndk//platforms/android-14/arch-arm/usr/lib/crtend_so.o
+
