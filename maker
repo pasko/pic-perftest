@@ -13,41 +13,93 @@ ADB=$ANDROID_TOOLS/sdk/platform-tools/adb
 GCC_VERSION=4.9
 ANDROID_CC="$ANDROID_TOOLS/ndk/toolchains/arm-linux-androideabi-$GCC_VERSION/prebuilt/linux-x86_64/bin/arm-linux-androideabi-gcc"
 ANDROID_SYSROOT_FLAGS="--sysroot=$ANDROID_TOOLS/ndk/platforms/android-14/arch-arm"
+ANDROID_STLPORT_FLAGS="-isystem$ANDROID_TOOLS/ndk//sources/cxx-stl/stlport/stlport"
 ANDROID_LIBGCC_A="$ANDROID_TOOLS/ndk/toolchains/arm-linux-androideabi-$GCC_VERSION/prebuilt/linux-x86_64/lib/gcc/arm-linux-androideabi/$GCC_VERSION/libgcc.a"
 
-CFLAGS="-Os -std=c99"
+# CFLAGS="-Os -std=c99"
+
+CFLAGS=" \
+  -fstack-protector \
+  --param=ssp-buffer-size=4 \
+  -fno-exceptions \
+  -fno-strict-aliasing \
+  -Wall \
+  -Wno-unused-parameter \
+  -Wno-missing-field-initializers \
+  -fvisibility=hidden \
+  -pipe \
+  -fPIC \
+  -Wno-unused-local-typedefs \
+  -march=armv7-a \
+  -mtune=generic-armv7-a \
+  -mfpu=vfpv3-d16 \
+  -mfloat-abi=softfp \
+  -mthumb \
+  -fno-tree-sra \
+  -fno-partial-inlining \
+  -fno-early-inlining \
+  -fno-tree-copy-prop \
+  -fno-tree-loop-optimize \
+  -fno-move-loop-invariants \
+  -fno-caller-saves \
+  -Wno-psabi \
+  -mthumb-interwork \
+  -ffunction-sections \
+  -funwind-tables \
+  -g \
+  -fstack-protector \
+  -fno-short-enums \
+  -finline-limit=64 \
+  -Wa,--noexecstack \
+  -Os \
+  -fno-ident \
+  -fdata-sections \
+  -ffunction-sections \
+  -fomit-frame-pointer \
+  -fno-unwind-tables \
+  -fno-asynchronous-unwind-tables \
+  -fno-rtti \
+  -fno-threadsafe-statics \
+  -fvisibility-inlines-hidden \
+  -Wsign-compare \
+  -Wno-abi \
+  -std=c99 \
+  -Wno-narrowing \
+  -Wno-literal-suffix"
+
 LDFLAGS=""
 LDFLAGS_SO_BEGIN="-shared \
-   -Wl,-z,now \
-   -Wl,-z,relro \
-   -Wl,--fatal-warnings \
-   -Wl,-z,noexecstack \
-   -fPIC \
-   -Wl,--gc-sections \
-   -fuse-ld=gold \
-   -nostdlib \
-   -Wl,--no-undefined \
-   $ANDROID_SYSROOT_FLAGS \
-   -Wl,--icf=safe \
-   -L$ANDROID_TOOLS/ndk//sources/cxx-stl/stlport/libs/armeabi-v7a \
-   -Wl,-shared,-Bsymbolic \
-   $ANDROID_TOOLS/ndk//platforms/android-14/arch-arm/usr/lib/crtbegin_so.o \
-   -Wl,-O1 \
-   -Wl,--as-needed"
+  -Wl,-z,now \
+  -Wl,-z,relro \
+  -Wl,--fatal-warnings \
+  -Wl,-z,noexecstack \
+  -fPIC \
+  -Wl,--gc-sections \
+  -fuse-ld=gold \
+  -nostdlib \
+  -Wl,--no-undefined \
+  $ANDROID_SYSROOT_FLAGS \
+  -Wl,--icf=safe \
+  -L$ANDROID_TOOLS/ndk//sources/cxx-stl/stlport/libs/armeabi-v7a \
+  -Wl,-shared,-Bsymbolic \
+  $ANDROID_TOOLS/ndk//platforms/android-14/arch-arm/usr/lib/crtbegin_so.o \
+  -Wl,-O1 \
+  -Wl,--as-needed"
 LDFLAGS_SO_END=" \
-   -Wl,--warn-shared-textrel \
-   -Wl,--whole-archive \
-   -Wl,--no-whole-archive \
-   -landroid \
-   -ljnigraphics \
-   -llog \
-   -lGLESv2 \
-   -lstlport_static \
-   $ANDROID_LIBGCC_A \
-   -lc \
-   -ldl \
-   -lm \
-   $ANDROID_TOOLS/ndk//platforms/android-14/arch-arm/usr/lib/crtend_so.o"
+  -Wl,--warn-shared-textrel \
+  -Wl,--whole-archive \
+  -Wl,--no-whole-archive \
+  -landroid \
+  -ljnigraphics \
+  -llog \
+  -lGLESv2 \
+  -lstlport_static \
+  $ANDROID_LIBGCC_A \
+  -lc \
+  -ldl \
+  -lm \
+  $ANDROID_TOOLS/ndk//platforms/android-14/arch-arm/usr/lib/crtend_so.o \
+  -Wl,--fatal-warnings -Wl,-flto"
 
 "$ANDROID_CC" $ANDROID_SYSROOT_FLAGS $CFLAGS -fPIC \
   -c library.c -o library.o

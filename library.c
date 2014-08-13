@@ -13,7 +13,7 @@ int64_t TimeDiffMicros(const struct timespec* start, const struct timespec* end)
   return 1000000 * sec_diff + (end->tv_nsec - start->tv_nsec) / 1000;
 }
 
-void RunBenchmark() {
+void __attribute__ ((visibility ("default"))) RunBenchmark() {
   const size_t kNumIterations = 1024 * 1024 * 1024;
   struct timespec start, end;
 

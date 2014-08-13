@@ -2,6 +2,9 @@
 
 #include <stdio.h>
 
+int __attribute__ ((visibility ("default"))) gLast;
+
 int Helper(int i) {
-  return i + 5;
+  gLast = i + 5;
+  return gLast;
 }
