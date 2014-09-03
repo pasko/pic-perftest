@@ -67,8 +67,8 @@ CFLAGS=" \
   -Wno-narrowing \
   -Wno-literal-suffix"
 
-LDFLAGS=""
-LDFLAGS_SO_BEGIN="-shared \
+LDFLAGS_SO_BEGIN=" \
+  -shared \
   -Wl,-z,now \
   -Wl,-z,relro \
   -Wl,--fatal-warnings \
@@ -84,7 +84,9 @@ LDFLAGS_SO_BEGIN="-shared \
   -Wl,-shared,-Bsymbolic \
   $ANDROID_TOOLS/ndk//platforms/android-14/arch-arm/usr/lib/crtbegin_so.o \
   -Wl,-O1 \
-  -Wl,--as-needed"
+  -Wl,--as-needed \
+  "
+
 LDFLAGS_SO_END=" \
   -Wl,--warn-shared-textrel \
   -Wl,--whole-archive \
@@ -99,7 +101,8 @@ LDFLAGS_SO_END=" \
   -ldl \
   -lm \
   $ANDROID_TOOLS/ndk//platforms/android-14/arch-arm/usr/lib/crtend_so.o \
-  -Wl,--fatal-warnings -Wl,-flto"
+  -Wl,--fatal-warnings \
+  "
 
 "$ANDROID_CC" $ANDROID_SYSROOT_FLAGS $CFLAGS -fPIC \
   -c library.c -o library.o
