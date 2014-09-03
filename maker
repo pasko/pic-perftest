@@ -15,8 +15,18 @@ ANDROID_CC="$ANDROID_TOOLS/ndk/toolchains/arm-linux-androideabi-$GCC_VERSION/pre
 ANDROID_SYSROOT_FLAGS="--sysroot=$ANDROID_TOOLS/ndk/platforms/android-14/arch-arm"
 ANDROID_STLPORT_FLAGS="-isystem$ANDROID_TOOLS/ndk//sources/cxx-stl/stlport/stlport"
 ANDROID_LIBGCC_A="$ANDROID_TOOLS/ndk/toolchains/arm-linux-androideabi-$GCC_VERSION/prebuilt/linux-x86_64/lib/gcc/arm-linux-androideabi/$GCC_VERSION/libgcc.a"
+PROFILE_DIR="/data/local/tmp/my_profile"
 
 # CFLAGS="-Os -std=c99"
+
+PROFILE_GENERATE_CFLAGS=" \
+  -fprofile-generate \
+  -fprofile-dir=$PROFILE_DIR \
+  "
+
+PROFILE_GENERATE_LDFLAGS="$ANDROID_TOOLS/ndk/toolchains/arm-linux-androideabi-$GCC_VERSION/prebuilt/linux-x86_64/lib/gcc/arm-linux-androideabi/$GCC_VERSION/libgcov.a"
+
+PROFILE_USE_CFLAGS="-fprofile-use=$PWD/my_profile"
 
 CFLAGS=" \
   -fstack-protector \
@@ -51,7 +61,7 @@ CFLAGS=" \
   -fno-short-enums \
   -finline-limit=64 \
   -Wa,--noexecstack \
-  -Os \
+  -O2 \
   -fno-ident \
   -fdata-sections \
   -ffunction-sections \
@@ -104,18 +114,45 @@ LDFLAGS_SO_END=" \
   -Wl,--fatal-warnings \
   "
 
-"$ANDROID_CC" $ANDROID_SYSROOT_FLAGS $CFLAGS -fPIC \
+"$ANDROID_CC" $ANDROID_SYSROOT_FLAGS $PROFILE_GENERATE_CFLAGS $CFLAGS -fPIC \
   -c library.c -o library.o
-"$ANDROID_CC" $ANDROID_SYSROOT_FLAGS $CFLAGS -fPIC \
+"$ANDROID_CC" $ANDROID_SYSROOT_FLAGS $PROFILE_GENERATE_CFLAGS $CFLAGS -fPIC \
   -c library_helper.c -o library_helper.o
 
 "$ANDROID_CC" $ANDROID_SYSROOT_FLAGS $LDFLAGS_SO_BEGIN \
-  library.o library_helper.o -shared -o library.so $LDFLAGS_SO_END
+  library.o library_helper.o -shared -o library.so \
+  $PROFILE_GENERATE_LDFLAGS $LDFLAGS_SO_END
 
-"$ANDROID_CC" $ANDROID_SYSROOT_FLAGS $CFLAGS test_runner.c -g -o test_runner
+"$ANDROID_CC" $ANDROID_SYSROOT_FLAGS $PROFILE_GENERATE_CFLAGS $CFLAGS \
+  test_runner.c -g -o test_runner
 
 $ADB push library.so /data/local/tmp
 $ADB push test_runner /data/local/tmp
+$ADB shell rm -rf $PROFILE_DIR
+$ADB shell /data/local/tmp/test_runner
+
+rm -rf my_profile
+mkdir my_profile
+pushd my_profile
+$ADB pull $PROFILE_DIR
+popd
+
+"$ANDROID_CC" $ANDROID_SYSROOT_FLAGS $PROFILE_USE_CFLAGS $CFLAGS -fPIC \
+  -c library.c -o library.o
+
+"$ANDROID_CC" $ANDROID_SYSROOT_FLAGS $PROFILE_USE_CFLAGS $CFLAGS -fPIC \
+  -c library_helper.c -o library_helper.o
+
+"$ANDROID_CC" $ANDROID_SYSROOT_FLAGS $LDFLAGS_SO_BEGIN \
+  library.o library_helper.o -shared -o library.so \
+  $PROFILE_USE_CFLAGS $LDFLAGS_SO_END
+
+"$ANDROID_CC" $ANDROID_SYSROOT_FLAGS $PROFILE_USE_CFLAGS $CFLAGS \
+  test_runner.c -g -o test_runner
+
+$ADB push library.so /data/local/tmp
+$ADB push test_runner /data/local/tmp
+$ADB shell rm -rf $PROFILE_DIR
 $ADB shell /data/local/tmp/test_runner
 
 # The compile command we have in Chromium:
