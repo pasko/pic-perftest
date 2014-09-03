@@ -14,7 +14,7 @@ int64_t TimeDiffMicros(const struct timespec* start, const struct timespec* end)
 }
 
 void __attribute__ ((visibility ("default"))) RunBenchmark() {
-  const size_t kNumIterations = 1024 * 1024 * 1024;
+  const size_t kNumIterations = 1024 * 1024 * 256;
   struct timespec start, end;
 
   clock_gettime(CLOCK_MONOTONIC, &start);
