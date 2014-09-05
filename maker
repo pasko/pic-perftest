@@ -24,7 +24,7 @@ PROFILE_GENERATE_CFLAGS=" \
   -fprofile-dir=$PROFILE_DIR \
   "
 
-PROFILE_GENERATE_LDFLAGS="$ANDROID_TOOLS/ndk/toolchains/arm-linux-androideabi-$GCC_VERSION/prebuilt/linux-x86_64/lib/gcc/arm-linux-androideabi/$GCC_VERSION/libgcov.a"
+PROFILE_GENERATE_LDFLAGS="$($ANDROID_CC --print-file-name=libgcov.a)"
 
 PROFILE_USE_CFLAGS="-fprofile-use=$PWD/my_profile"
 
